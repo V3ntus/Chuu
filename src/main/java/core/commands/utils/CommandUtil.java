@@ -12,6 +12,7 @@ import core.parsers.params.CommandParameters;
 import core.services.ColorService;
 import core.services.validators.ArtistValidator;
 import core.util.ChuuVirtualPool;
+import core.util.VirtualParallel;
 import dao.ChuuService;
 import dao.entities.*;
 import dao.exceptions.InstanceNotFoundException;
@@ -30,8 +31,8 @@ import javax.annotation.Nullable;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -89,11 +90,14 @@ public class CommandUtil {
 
 
     public static BufferedImage getLogo(ChuuService dao, Context e) {
-        try (InputStream stream = dao.findLogo(e.getGuild().getIdLong())) {
-            if (stream != null)
-                return ImageIO.read(stream);
-        } catch (IOException ex) {
-            return null;
+        if (e.isFromGuild()) {
+            try (var is = dao.findLogo(e.getGuild().getIdLong());
+                 var stream = is == null ? null : new BufferedInputStream(is)) {
+                if (stream != null)
+                    return ImageIO.read(stream);
+            } catch (IOException ex) {
+                return null;
+            }
         }
         return null;
     }
@@ -102,17 +106,22 @@ public class CommandUtil {
         String newUrl = null;
         try {
             newUrl = discogsApi.findArtistImage(scrobbledArtist.getArtist());
+            VirtualParallel.handleInterrupt();
             if (!newUrl.isEmpty()) {
                 dao.upsertUrl(newUrl, scrobbledArtist.getArtistId());
+                VirtualParallel.handleInterrupt();
             } else {
                 Pair<String, String> urlAndId = spotify.getUrlAndId(scrobbledArtist.getArtist());
+                VirtualParallel.handleInterrupt();
                 newUrl = urlAndId.getLeft();
                 if (newUrl.isBlank()) {
                     scrobbledArtist.setUrl("");
                     scrobbledArtist.setUpdateBit(false);
                     dao.upsertArtistSad(scrobbledArtist);
+                    VirtualParallel.handleInterrupt();
                 } else {
                     dao.upsertSpotify(newUrl, scrobbledArtist.getArtistId(), urlAndId.getRight());
+                    VirtualParallel.handleInterrupt();
                 }
             }
         } catch (DiscogsServiceException ignored) {
@@ -277,9 +286,11 @@ public class CommandUtil {
             if (whoD == null) {
                 if (isFromServer) {
                     whoD = g.retrieveMemberById(discordID).onErrorFlatMap((t) -> new CompletedRestAction<>(g.getJDA(), null, null)).complete();
+                    VirtualParallel.handleInterrupt();
                 }
                 if (whoD == null) {
                     user = core.Chuu.getShardManager().retrieveUserById(discordID).complete();
+                    VirtualParallel.handleInterrupt();
                     username = user.getName();
                 } else {
                     user = whoD.getUser();
@@ -291,6 +302,7 @@ public class CommandUtil {
             }
         } else {
             user = core.Chuu.getShardManager().retrieveUserById(discordID).complete();
+            VirtualParallel.handleInterrupt();
             username = user.getName();
 
         }

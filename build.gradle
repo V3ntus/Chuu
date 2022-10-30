@@ -41,8 +41,8 @@ group 'org.ish'
 version '1.1.0'
 apply plugin: 'java'
 
-sourceCompatibility = 19
-targetCompatibility = 19
+sourceCompatibility = '19.PREVIEW'
+targetCompatibility = '19.PREVIEW'
 
 
 compileJava {
@@ -54,7 +54,7 @@ compileTestJava {
 
 }
 test {
-    jvmArgs '--enable-preview'
+    jvmArgs += ['--enable-preview', '--add-modules', 'jdk.incubator.concurrent']
 
 }
 compileJava.options.encoding = 'UTF-8'

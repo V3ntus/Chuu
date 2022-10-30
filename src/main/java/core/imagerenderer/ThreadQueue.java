@@ -5,7 +5,7 @@ import core.apis.last.entities.chartentities.PreComputedChartEntity;
 import core.apis.last.entities.chartentities.UrlCapsule;
 import core.imagerenderer.util.fitter.StringFitter;
 import core.imagerenderer.util.fitter.StringFitterBuilder;
-import org.imgscalr.Scalr;
+import core.util.VirtualParallel;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -91,36 +91,38 @@ class ThreadQueue implements Runnable {
     }
 
     final void drawImage(BufferedImage image, UrlCapsule capsule, int x, int y) {
-        if (image.getHeight() != imageSize || image.getWidth() != imageSize) {
-            image = Scalr.resize(image, Scalr.Method.QUALITY, Scalr.Mode.FIT_EXACT, imageSize,
-                    imageSize, Scalr.OP_ANTIALIAS);
-        }
-        drawImage(image, capsule);
-        g.drawImage(image, x * imageSize, y * imageSize, null);
+        VirtualParallel.handleInterrupt();
+        BufferedImage croppedImage = GraphicUtils.resizeOrCrop(image, imageSize);
+        drawImage(croppedImage, capsule);
+        VirtualParallel.handleInterrupt();
+        g.drawImage(croppedImage, x * imageSize, y * imageSize, null);
+        VirtualParallel.handleInterrupt();
     }
 
 
     public void handleInvalidImage(UrlCapsule capsule, int x, int y) {
-        reentrantLock.lock();
         try {
+            reentrantLock.lock();
             Color temp = g.getColor();
             g.setColor(Color.WHITE);
             g.fillRect(x * imageSize, y * imageSize, imageSize, imageSize);
             g.setColor(temp);
         } finally {
             reentrantLock.unlock();
+            VirtualParallel.handleInterrupt();
         }
         if (asideMode) {
             drawNeverEndingCharts(capsule, y, x, imageSize);
         } else {
-            reentrantLock.lock();
             try {
+                reentrantLock.lock();
                 Color temp = g.getColor();
                 g.setColor(Color.BLACK);
                 drawNames(capsule, y, x, g, null);
                 g.setColor(temp);
             } finally {
                 reentrantLock.unlock();
+                VirtualParallel.handleInterrupt();
             }
         }
     }
@@ -175,25 +177,35 @@ class ThreadQueue implements Runnable {
     @Override
     public void run() {
         while (iterations.getAndDecrement() > 0) {
-
             try {
                 UrlCapsule capsule = queue.take();
-                int pos = capsule.getPos();
-                int y = (pos / this.x);
-                int x = pos % this.x;
-                if (capsule instanceof PreComputedChartEntity) {
-                    handlePreComputedCapsule((PreComputedChartEntity) capsule, x, y);
-                } else {
-                    handleCapsule(capsule, x, y);
-                }
-
+                run0(capsule);
             } catch (Exception e) {
                 Chuu.getLogger().warn(e.getMessage(), e);
             }
+            VirtualParallel.handleInterrupt();
         }
 
 
     }
+
+    public void run0(UrlCapsule capsule) {
+        try {
+            int pos = capsule.getPos();
+            int y = (pos / this.x);
+            int x = pos % this.x;
+
+            if (capsule instanceof PreComputedChartEntity) {
+                handlePreComputedCapsule((PreComputedChartEntity) capsule, x, y);
+            } else {
+                handleCapsule(capsule, x, y);
+            }
+
+        } catch (Exception e) {
+            Chuu.getLogger().warn(e.getMessage(), e);
+        }
+    }
+
 
     void drawImage(BufferedImage image, UrlCapsule capsule) {
         if (asideMode) {

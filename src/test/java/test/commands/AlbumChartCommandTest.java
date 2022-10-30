@@ -1,15 +1,14 @@
 package test.commands;
 
-import core.commands.Context;
-import net.dv8tion.jda.api.events.GenericEvent;
 import org.junit.jupiter.api.Test;
-import test.commands.parsers.MessageGenerator;
 import test.commands.parsers.NullReturnParsersTest;
+import test.commands.parsers.TestAssertion;
 import test.commands.utils.CommandTest;
 import test.commands.utils.ImageUtils;
-import test.commands.utils.TestResources;
+import test.commands.utils.ImageUtils2;
+import test.runner.AssertionRunner;
 
-import java.util.concurrent.TimeUnit;
+import java.util.List;
 
 public class AlbumChartCommandTest extends CommandTest {
 
@@ -28,43 +27,27 @@ public class AlbumChartCommandTest extends CommandTest {
     @Test
     public void ChartNormalTest() {
 
-        //Equivalent partitions:
-        // chart size >= 1x1 -> valid
-        // chart size < 1x1 -> invalid
-
-        //frontier values
-        // 1x1 -> valid
-        //0x0 -> invalid
-        // 0x1 -> invalid
-        // 1x0 -> invalid
-        // MAX_INT x MAX_INT -> Valid but can take a bit of time
-        MessageGenerator.Tuple build = new MessageGenerator(COMMAND_ALIAS + " a 1x1").build();
-        Context result = build.result();
-        GenericEvent event = build.result().getEvent();
-        Thread.startVirtualThread(() -> {
-            try {
-                Object poll = build.receiver().poll(10, TimeUnit.SECONDS);
-                assert poll != null;
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        TestResources.callEvent(event);
-
-
-//        ImageUtils.testImage(COMMAND_ALIAS + " a 1x1", 300, 300, ".png");
-//        Pattern errorPattern = Pattern.compile("Error on (?:.*)'s request:\n" +
-//                                               "0 is not a valid value for a chart!");
-//
-//        OneLineUtils.testCommands(COMMAND_ALIAS + " a 0x0", errorPattern);
-//        OneLineUtils.testCommands(COMMAND_ALIAS + " a 0x1", errorPattern);
-//        OneLineUtils.testCommands(COMMAND_ALIAS + " a 1x0", errorPattern);
+        AssertionRunner.fromMessage(COMMAND_ALIAS + " a 1x1 ")
+                .assertion(List.of(
+                        TestAssertion.typing(),
+                        TestAssertion.image(
+                                (e) -> ImageUtils2.testImage(e, 300, 300, ".png"),
+                                "Then I should receive a 300x300 png image"
+                        )));
 
     }
 
     @Test
     public void ChartBigTest() {
-        ImageUtils.testImage(COMMAND_ALIAS + " a 10x6", true, 900, 1500, 70, ".jpg");
+
+        AssertionRunner.fromMessage(COMMAND_ALIAS + " a 20x11")
+                .assertion(
+                        List.of(
+                                TestAssertion.typing(),
+                                TestAssertion.image(
+                                        (e) -> ImageUtils2.testImage(e, 1650, 3000, ".jpg"),
+                                        "Then I should receive a 900x1500 jpg image"
+                                )));
     }
 
     @Test

@@ -8,7 +8,11 @@ import jdk.incubator.concurrent.StructuredTaskScope;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -43,9 +47,9 @@ public class SQLUtils {
                     return 0;
                 });
             }
-            scope.join();
+            scope.joinUntil(Instant.now().plus(2, ChronoUnit.MINUTES));
             scope.throwIfFailed(ChuuServiceException::new);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | TimeoutException e) {
             throw new ChuuServiceException(e);
         }
     }
@@ -88,5 +92,16 @@ public class SQLUtils {
             throw new ChuuServiceException(e);
         }
 
+    }
+
+    public static void updateStringLong(Connection connection, long id, String str, String query) {
+        try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+            int i = 1;
+            preparedStatement.setString(i++, str);
+            preparedStatement.setLong(i, id);
+            preparedStatement.executeUpdate();
+        } catch (SQLException e) {
+            throw new ChuuServiceException(e);
+        }
     }
 }

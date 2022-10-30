@@ -94,14 +94,14 @@ public abstract class ChartableCommand<T extends ChartParameters> extends Concur
                 return;
             default:
             case LIST:
-                ArrayList<UrlCapsule> liste = new ArrayList<>(urlCapsules.size());
-                urlCapsules.drainTo(liste);
-                doList(liste, params, countWrapper.getRows());
+                List<UrlCapsule> printList = new ArrayList<>(urlCapsules.size());
+                urlCapsules.drainTo(printList);
+                doList(printList, params, countWrapper.getRows());
                 break;
             case PIE:
-                liste = new ArrayList<>(urlCapsules.size());
-                urlCapsules.drainTo(liste);
-                PieChart pieChart = pie.doPie(params, liste);
+                printList = new ArrayList<>(urlCapsules.size());
+                urlCapsules.drainTo(printList);
+                PieChart pieChart = pie.doPie(params, printList);
                 doPie(pieChart, params, countWrapper.getRows());
                 break;
         }
@@ -121,6 +121,7 @@ public abstract class ChartableCommand<T extends ChartParameters> extends Concur
 
         BufferedImage image = CollageMaker
                 .generateCollageThreaded(x, minx, queue, chartQuality, params.isAside() || params.chartMode().equals(ChartMode.IMAGE_ASIDE) || params.chartMode().equals(ChartMode.IMAGE_ASIDE_INFO));
+
         boolean info = params.chartMode().equals(ChartMode.IMAGE_INFO) || params.chartMode().equals(ChartMode.IMAGE_ASIDE_INFO);
         sendImage(image, e, chartQuality, info ? configEmbed(new ChuuEmbedBuilder(e), params, size) : null);
     }
@@ -140,7 +141,7 @@ public abstract class ChartableCommand<T extends ChartParameters> extends Concur
             queue.forEach(t -> t.setUrl(Chuu.getCoverService().getCover(t.getArtistName(), t.getAlbumName(), t.getUrl(), e)));
             if (CommandUtil.rand.nextFloat() >= 0.7f && first instanceof AlbumChart) {
                 List<UrlCapsule> items = new ArrayList<>(queue);
-                Thread.startVirtualThread(() -> items.stream()
+                CommandUtil.runLog(() -> items.stream()
                         .filter(t -> t.getUrl() != null && !t.getUrl().isBlank())
                         .map(t -> (AlbumChart) t)
                         .forEach(z -> {

@@ -1058,7 +1058,7 @@ public class ChuuService implements EveryNoiseService {
         }
     }
 
-    public void insertAlbumCrown(long artistId, String album, long discordID, long guildId, int plays) {
+    public void insertAlbumCrown(long artistId, String album, long discordID, long guildId, long plays) {
         try (Connection connection = dataSource.getConnection()) {
             updaterDao.insertAlbumCrown(connection, artistId, album, discordID, guildId, plays);
         } catch (SQLException e) {
@@ -1693,10 +1693,10 @@ public class ChuuService implements EveryNoiseService {
         }
     }
 
-    public List<CrownableArtist> getCrownable(Long discordId, Long guildId, boolean skipCrownws, boolean onlySecond, int crownDistance) {
+    public List<CrownableArtist> getCrownable(String lastfmId, Long guildId, boolean skipCrownws, boolean onlySecond, int crownDistance) {
         try (Connection connection = dataSource.getConnection()) {
             connection.setReadOnly(true);
-            return queriesDao.getCrownable(connection, discordId, guildId, skipCrownws, onlySecond, crownDistance);
+            return queriesDao.getCrownable(connection, lastfmId, guildId, skipCrownws, onlySecond, crownDistance);
         } catch (SQLException e) {
             throw new ChuuServiceException(e);
         }
@@ -2351,9 +2351,9 @@ public class ChuuService implements EveryNoiseService {
     }
 
 
-    public List<AlbumUserPlays> getUserTopArtistAlbums(int limit, long artistId, long discord_id) {
+    public List<AlbumUserPlays> getUserTopArtistAlbums(int limit, long artistId, String lastfmId) {
         try (Connection connection = dataSource.getConnection()) {
-            return albumDao.getUserTopArtistAlbums(connection, discord_id, artistId, limit);
+            return albumDao.getUserTopArtistAlbums(connection, lastfmId, artistId, limit);
         } catch (SQLException e) {
             throw new ChuuServiceException(e);
         }
@@ -2741,6 +2741,7 @@ public class ChuuService implements EveryNoiseService {
     public void updateMbids(List<ScrobbledArtist> artistData) {
 
         try (Connection connection = dataSource.getConnection()) {
+            updaterDao.fillIds(connection, artistData);
             updaterDao.updateMbids(connection, artistData);
         } catch (SQLException e) {
             throw new ChuuServiceException(e);

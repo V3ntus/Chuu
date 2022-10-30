@@ -25,12 +25,8 @@ public class BandRendered {
     private static final int Y_MAX = 1000;
     private static final int X_MARGIN = 25;
     private static final Font NORMAL_FONT = new Font("Noto Sans Display SemiBold", Font.PLAIN, 32);
-    private static final Font JAPANESE_FONT = new Font("Noto Serif CJK JP", Font.PLAIN, 32);
     private static final Font DESC_FONT = new Font("Noto Sans CJK JP Light", Font.PLAIN, 32);
     private static final StringFitter fitter = new StringFitterBuilder(32, 300)
-            .setBaseFont(NORMAL_FONT)
-            .setMinSize(8).build();
-    private static final StringFitter artist = new StringFitterBuilder(32, 300)
             .setBaseFont(NORMAL_FONT)
             .setMinSize(8).build();
     private static final int albumsStartPosition = X_MARGIN + 400 + 195 + 40;
@@ -41,7 +37,7 @@ public class BandRendered {
 
     }
 
-    public static BufferedImage makeBandImage(WrapperReturnNowPlaying wrapperReturnNowPlaying, ArtistAlbums ai, int plays, BufferedImage logo, String user, long threshold) {
+    public static BufferedImage makeBandImage(WrapperReturnNowPlaying wrapperReturnNowPlaying, ArtistAlbums ai, long plays, String user, long threshold) {
         BufferedImage canvas = new BufferedImage(X_MAX, Y_MAX, BufferedImage.TYPE_INT_RGB);
         BufferedImage lastFmLogo;
         BufferedImage artistReplacement;
@@ -100,7 +96,6 @@ public class BandRendered {
         int imageSize = albumsImages.size() > 4 ? 210 : 300;
         int size = albumsImages.size();
         for (BufferedImage albumsImage : albumsImages) {
-            int posX;
 
             Point point = drawImage(count++, size);
             g.drawImage(albumsImage, point.x, point.y, imageSize, imageSize, null);
@@ -110,7 +105,6 @@ public class BandRendered {
             String play = Integer.toString(albumUserPlays.getPlays());
 
             Font ogFont = g.getFont();
-            float sizeFont = ogFont.getSize();
 
             StringFitter.FontMetadata albumFont = fitter
                     .getFontMetadata(g, album, imageSize);
@@ -134,8 +128,7 @@ public class BandRendered {
 
         int yBaseLine = 380;
         if (artistImageFill != null) {
-            g.drawImage(Scalr
-                    .resize(artistImageFill, yBaseLine, Scalr.OP_ANTIALIAS), X_MARGIN + 40 + (400 - 380) / 2, 25, null);
+            g.drawImage(GraphicUtils.resizeOrCrop(artistImageFill, 380), X_MARGIN + 40 + (400 - 380) / 2, 25, null);
         }
         yBaseLine += metrics.getAscent() + metrics.getDescent() + metrics.getLeading() + 20;
         StringFitter.FontMetadata fontMetadata = new StringFitterBuilder(g.getFont().getSize(), 380)

@@ -4,11 +4,16 @@ import core.Chuu;
 import dao.exceptions.ChuuServiceException;
 import jdk.incubator.concurrent.StructuredTaskScope;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
@@ -21,16 +26,23 @@ public class VirtualParallel {
     }
 
     public static <T, J> List<T> runIO(List<J> items, CheckedFunction<J, T> IOMapper) {
-        return runIO(items, -1L, IOMapper);
+        return runIO(items, IOMapper, Instant.now().plus(1, ChronoUnit.MINUTES));
+    }
+
+    public static <T, J> List<T> runIO(List<J> items, CheckedFunction<J, T> IOMapper, Instant timeout) {
+        return runIO(items, -1L, IOMapper, timeout);
     }
 
     public static <T, J> List<T> runIO(List<J> items, long limit, CheckedFunction<J, T> IOMapper) {
+        return runIO(items, limit, IOMapper, Instant.now().plus(1, ChronoUnit.MINUTES));
+    }
+
+    public static <T, J> List<T> runIO(List<J> items, long limit, CheckedFunction<J, T> IOMapper, Instant timeout) {
         Supplier<CustomPools<T>> scoper;
         if (limit <= 0) {
             scoper = ExecuteAllIgnoreErrors::new;
         } else {
             scoper = () -> new ExecuteSome<>(limit);
-            ;
         }
         try (var scope = scoper.get()) {
 
@@ -48,10 +60,21 @@ public class VirtualParallel {
                     }
                 }
             }
-            scope.join();
+            if (timeout != null) {
+                scope.joinUntil(timeout);
+            } else {
+                scope.join();
+            }
             return scope.results();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | TimeoutException e) {
             throw new ChuuServiceException(e);
+        }
+    }
+
+    public static void handleInterrupt() {
+        if (Thread.currentThread().isInterrupted()) {
+            Chuu.getLogger().warn("Thread interrupted", new Exception());
+            throw new ChuuServiceException(new InterruptedException());
         }
     }
 
@@ -60,18 +83,20 @@ public class VirtualParallel {
     }
 
     private static sealed abstract class CustomPools<T> extends StructuredTaskScope<T> {
+        public CustomPools() {
+            super("Custom-pool", r -> new Thread(r, "Custom-pool"));
+        }
+
         abstract List<T> results();
     }
 
     private static final class ExecuteSome<T> extends CustomPools<T> {
-        private static final String LOG_PREFIX = "TRACER CustomStructuredTaskScope ";
 
         private final AtomicInteger successCounter = new AtomicInteger(0);
-        private final AtomicBoolean hasReachedThreshold = new AtomicBoolean(false);
         private final List<T> results = new ArrayList<>();
         // sanity check:
         private final AtomicInteger failCounter = new AtomicInteger(0);
-        private long numTasksForSuccess = 0;
+        private final long numTasksForSuccess;
 
         public ExecuteSome(long numTasksForSuccess) {
             this.numTasksForSuccess = numTasksForSuccess;
@@ -79,22 +104,18 @@ public class VirtualParallel {
 
         @Override
         protected void handleComplete(Future<T> future) {
-            try {
-                var state = future.state();
-                if (state == Future.State.SUCCESS) {
+            switch (future.state()) {
+                case SUCCESS -> {
                     int numSuccess = successCounter.incrementAndGet();
                     if (numSuccess <= numTasksForSuccess) {
                         results.add(future.resultNow());
                     }
-
                     if (numSuccess == numTasksForSuccess) {
                         shutdown();
                     }
-                } else if (state == Future.State.FAILED) {
-                    failCounter.incrementAndGet();
                 }
-            } catch (Exception ex) {
-                Chuu.getLogger().warn(ex.getMessage(), ex);
+                case FAILED -> failCounter.incrementAndGet();
+                case CANCELLED -> throw new ChuuServiceException(new InterruptedException());
             }
         }
 
@@ -111,7 +132,7 @@ public class VirtualParallel {
         private final AtomicBoolean isInCollection = new AtomicBoolean(false);
         private final Lock readLock;
         private final Lock writeLock;
-        private final List<T> results = new ArrayList<>();
+        private final Collection<T> results = new ConcurrentLinkedDeque<>();
         private final AtomicInteger failCounter = new AtomicInteger(0);
 
         {
@@ -121,6 +142,7 @@ public class VirtualParallel {
         }
 
         public ExecuteAllIgnoreErrors() {
+            super();
         }
 
         @Override
@@ -128,6 +150,12 @@ public class VirtualParallel {
             forkCount.incrementAndGet();
             forkCount.addAndGet(preJoinCount.get());
             return super.fork(task);
+        }
+
+        @Override
+        public StructuredTaskScope<T> joinUntil(Instant deadline) throws InterruptedException, TimeoutException {
+            isInCollection.compareAndSet(false, true);
+            return super.joinUntil(deadline);
         }
 
         @Override
@@ -139,15 +167,22 @@ public class VirtualParallel {
         @Override
         protected void handleComplete(Future<T> future) {
             var state = future.state();
-            if (state == Future.State.SUCCESS) {
-                writeLock.lock();
-                try {
-                    results.add(future.resultNow());
-                } finally {
-                    writeLock.unlock();
+            switch (state) {
+                case RUNNING -> {
                 }
-            } else if (state == Future.State.FAILED) {
-                failCounter.incrementAndGet();
+                case SUCCESS -> {
+                    writeLock.lock();
+                    try {
+                        T e = future.resultNow();
+                        if (e != null) {
+                            results.add(e);
+                        }
+                    } finally {
+                        writeLock.unlock();
+                    }
+                }
+                case FAILED -> failCounter.incrementAndGet();
+                case CANCELLED -> throw new ChuuServiceException(new InterruptedException());
             }
             if (isInCollection.get()) {
                 int i = forkCount.decrementAndGet();
